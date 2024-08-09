@@ -5,6 +5,7 @@ import com.shifthackz.aisdv1.core.common.extensions.fixUrlSlashes
 import com.shifthackz.aisdv1.core.common.extensions.shouldUseNewMediaStore
 import com.shifthackz.aisdv1.domain.entity.ColorToken
 import com.shifthackz.aisdv1.domain.entity.DarkThemeToken
+import com.shifthackz.aisdv1.domain.entity.FeatureTag
 import com.shifthackz.aisdv1.domain.entity.HuggingFaceModel
 import com.shifthackz.aisdv1.domain.entity.ServerSource
 import com.shifthackz.aisdv1.domain.entity.Settings
@@ -20,10 +21,25 @@ class PreferenceManagerImpl(
     private val preferencesChangedSubject: BehaviorSubject<Unit> =
         BehaviorSubject.createDefault(Unit)
 
-    override var serverUrl: String
+    override var automatic1111ServerUrl: String
         get() = (preferences.getString(KEY_SERVER_URL, "") ?: "").fixUrlSlashes()
         set(value) = preferences.edit()
             .putString(KEY_SERVER_URL, value.fixUrlSlashes())
+            .apply()
+            .also { onPreferencesChanged() }
+
+    override var swarmUiServerUrl: String
+        get() = (preferences.getString(KEY_SWARM_SERVER_URL, "") ?: "").fixUrlSlashes()
+        set(value) = preferences.edit()
+            .putString(KEY_SWARM_SERVER_URL, value.fixUrlSlashes())
+            .apply()
+            .also { onPreferencesChanged() }
+
+    override var swarmUiModel: String
+        get() = preferences.getString(KEY_SWARM_MODEL, "") ?: ""
+        set(value) = preferences
+            .edit()
+            .putString(KEY_SWARM_MODEL, value)
             .apply()
             .also { onPreferencesChanged() }
 
@@ -35,7 +51,7 @@ class PreferenceManagerImpl(
             .also { onPreferencesChanged() }
 
     override var monitorConnectivity: Boolean
-        get() = if (source != ServerSource.AUTOMATIC1111) false
+        get() = if (!source.featureTags.contains(FeatureTag.OwnServer)) false
         else preferences.getBoolean(KEY_MONITOR_CONNECTIVITY, true)
         set(value) = preferences.edit()
             .putBoolean(KEY_MONITOR_CONNECTIVITY, value)
@@ -188,14 +204,22 @@ class PreferenceManagerImpl(
             .apply()
             .also { onPreferencesChanged() }
 
+    override var backgroundGeneration: Boolean
+        get() = preferences.getBoolean(KEY_BACKGROUND_GENERATION, false)
+        set(value) = preferences.edit()
+            .putBoolean(KEY_BACKGROUND_GENERATION, value)
+            .apply()
+            .also { onPreferencesChanged() }
+
     override fun observe(): Flowable<Settings> = preferencesChangedSubject
         .toFlowable(BackpressureStrategy.LATEST)
         .map {
             Settings(
-                serverUrl = serverUrl,
+                serverUrl = automatic1111ServerUrl,
                 sdModel = sdModel,
                 demoMode = demoMode,
                 monitorConnectivity = monitorConnectivity,
+                backgroundGeneration = backgroundGeneration,
                 autoSaveAiResults = autoSaveAiResults,
                 saveToMediaStore = saveToMediaStore,
                 formAdvancedOptionsAlwaysShow = formAdvancedOptionsAlwaysShow,
@@ -215,6 +239,8 @@ class PreferenceManagerImpl(
 
     companion object {
         const val KEY_SERVER_URL = "key_server_url"
+        const val KEY_SWARM_SERVER_URL = "key_swarm_server_url"
+        const val KEY_SWARM_MODEL = "key_swarm_model"
         const val KEY_DEMO_MODE = "key_demo_mode"
         const val KEY_MONITOR_CONNECTIVITY = "key_monitor_connectivity"
         const val KEY_AI_AUTO_SAVE = "key_ai_auto_save"
@@ -229,7 +255,7 @@ class PreferenceManagerImpl(
         const val KEY_HUGGING_FACE_MODEL_KEY = "key_hugging_face_model_key"
         const val KEY_STABILITY_AI_API_KEY = "key_stability_ai_api_key"
         const val KEY_STABILITY_AI_ENGINE_ID_KEY = "key_stability_ai_engine_id_key"
-        const val KEY_FORCE_SETUP_AFTER_UPDATE = "force_upd_setup_v0.x.x-v0.5.8"
+        const val KEY_FORCE_SETUP_AFTER_UPDATE = "force_upd_setup_v0.x.x-v0.6.2"
         const val KEY_LOCAL_MODEL_ID = "key_local_model_id"
         const val KEY_LOCAL_NN_API = "key_local_nn_api"
         const val KEY_DESIGN_DYNAMIC_COLORS = "key_design_dynamic_colors"
@@ -237,5 +263,6 @@ class PreferenceManagerImpl(
         const val KEY_DESIGN_DARK_THEME = "key_design_dark_theme"
         const val KEY_DESIGN_COLOR_TOKEN = "key_design_color_token_theme"
         const val KEY_DESIGN_DARK_TOKEN = "key_design_dark_color_token_theme"
+        const val KEY_BACKGROUND_GENERATION = "key_background_generation"
     }
 }

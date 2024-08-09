@@ -50,7 +50,19 @@ class ServerSetupViewModel(
         showBackNavArrow = launchSource == ServerSetupLaunchSource.SETTINGS,
     )
 
-    private var downloadDisposable: Disposable? = null
+    private val credentials: AuthorizationCredentials
+        get() = when (currentState.mode) {
+            ServerSource.AUTOMATIC1111 -> {
+                if (!currentState.demoMode) currentState.credentialsDomain()
+                else AuthorizationCredentials.None
+            }
+
+            ServerSource.SWARM_UI -> currentState.credentialsDomain()
+
+            else -> AuthorizationCredentials.None
+        }
+
+    private val downloadDisposables: MutableList<Pair<String, Disposable>> = mutableListOf()
 
     init {
         !Single.zip(
@@ -73,12 +85,20 @@ class ServerSetupViewModel(
                         mode = configuration.source,
                         demoMode = configuration.demoMode,
                         serverUrl = configuration.serverUrl,
+                        swarmUiUrl = configuration.swarmUiUrl,
                         authType = configuration.authType,
                     )
                         .withCredentials(configuration.authCredentials)
                         .withHordeApiKey(configuration.hordeApiKey)
                 }
             }
+    }
+
+    override fun onCleared() {
+        downloadDisposables.forEach { (_, disposable) ->
+            disposable.dispose()
+        }
+        super.onCleared()
     }
 
     override fun processIntent(intent: ServerSetupIntent) = when (intent) {
@@ -181,6 +201,10 @@ class ServerSetupViewModel(
             it.copy(serverUrl = intent.url, serverUrlValidationError = null)
         }
 
+        is ServerSetupIntent.UpdateSwarmUiUrl -> updateState {
+            it.copy(swarmUiUrl = intent.url, swarmUiUrlValidationError = null)
+        }
+
         is ServerSetupIntent.LaunchUrl -> {
             emitEffect(ServerSetupEffect.LaunchUrl(intent.url))
         }
@@ -219,6 +243,7 @@ class ServerSetupViewModel(
             ServerSource.HUGGING_FACE -> connectToHuggingFace()
             ServerSource.OPEN_AI -> connectToOpenAi()
             ServerSource.STABILITY_AI -> connectToStabilityAi()
+            ServerSource.SWARM_UI -> connectToSwarmUi()
         }
             .doOnSubscribe { setScreenModal(Modal.Communicating(canCancel = false)) }
             .subscribeOnMainThread(schedulersProvider)
@@ -236,33 +261,10 @@ class ServerSetupViewModel(
     private fun validate(): Boolean = when (currentState.mode) {
         ServerSource.AUTOMATIC1111 -> {
             if (currentState.demoMode) true
-            else {
-                val serverUrlValidation = urlValidator(currentState.serverUrl)
-                var isValid = serverUrlValidation.isValid
-                updateState { state ->
-                    var newState = state.copy(
-                        serverUrlValidationError = serverUrlValidation.mapToUi()
-                    )
-                    if (currentState.authType == ServerSetupState.AuthType.HTTP_BASIC) {
-                        val loginValidation = stringValidator(currentState.login)
-                        val passwordValidation = stringValidator(currentState.password)
-                        newState = newState.copy(
-                            loginValidationError = loginValidation.mapToUi(),
-                            passwordValidationError = passwordValidation.mapToUi()
-                        )
-                        isValid = isValid && loginValidation.isValid && passwordValidation.isValid
-                    }
-                    if (serverUrlValidation.validationError is UrlValidator.Error.Localhost
-                        && newState.loginValidationError == null
-                        && newState.passwordValidationError == null
-                    ) {
-                        newState = newState.copy(screenModal = Modal.ConnectLocalHost)
-                    }
-                    newState
-                }
-                isValid
-            }
+            else validateServerUrlAndCredentials(currentState.serverUrl)
         }
+
+        ServerSource.SWARM_UI -> validateServerUrlAndCredentials(currentState.swarmUiUrl)
 
         ServerSource.HORDE -> {
             if (currentState.hordeDefaultApiKey) true
@@ -304,37 +306,70 @@ class ServerSetupViewModel(
         }
     }
 
+    private fun validateServerUrlAndCredentials(url: String): Boolean {
+        val serverUrlValidation = urlValidator(url)
+        var isValid = serverUrlValidation.isValid
+        updateState { state ->
+            var newState = state.copy(
+                serverUrlValidationError = if (state.mode == ServerSource.AUTOMATIC1111) {
+                    serverUrlValidation.mapToUi()
+                } else {
+                    state.serverUrlValidationError
+                },
+                swarmUiUrlValidationError = if (state.mode == ServerSource.SWARM_UI) {
+                    serverUrlValidation.mapToUi()
+                } else {
+                    state.swarmUiUrlValidationError
+                },
+            )
+            if (currentState.authType == ServerSetupState.AuthType.HTTP_BASIC) {
+                val loginValidation = stringValidator(currentState.login)
+                val passwordValidation = stringValidator(currentState.password)
+                newState = newState.copy(
+                    loginValidationError = loginValidation.mapToUi(),
+                    passwordValidationError = passwordValidation.mapToUi()
+                )
+                isValid = isValid && loginValidation.isValid && passwordValidation.isValid
+            }
+            if (serverUrlValidation.validationError is UrlValidator.Error.Localhost
+                && newState.loginValidationError == null
+                && newState.passwordValidationError == null
+            ) {
+                newState = newState.copy(screenModal = Modal.ConnectLocalHost)
+            }
+            newState
+        }
+        return isValid
+    }
+
     private fun connectToAutomaticInstance(): Single<Result<Unit>> {
         val demoMode = currentState.demoMode
         val connectUrl = if (demoMode) currentState.demoModeUrl else currentState.serverUrl
-        val credentials = when (currentState.mode) {
-            ServerSource.AUTOMATIC1111 -> {
-                if (!demoMode) currentState.credentialsDomain()
-                else AuthorizationCredentials.None
-            }
-
-            else -> AuthorizationCredentials.None
-        }
         return setupConnectionInterActor.connectToA1111(
-            connectUrl,
-            demoMode,
-            credentials,
+            url = connectUrl,
+            isDemo = demoMode,
+            credentials = credentials,
         )
     }
 
+    private fun connectToSwarmUi() = setupConnectionInterActor.connectToSwarmUi(
+        url = currentState.swarmUiUrl,
+        credentials = credentials,
+    )
+
     private fun connectToHuggingFace() = with(currentState) {
         setupConnectionInterActor.connectToHuggingFace(
-            huggingFaceApiKey,
-            huggingFaceModel,
+            apiKey = huggingFaceApiKey,
+            model = huggingFaceModel,
         )
     }
 
     private fun connectToOpenAi() = setupConnectionInterActor.connectToOpenAi(
-        currentState.openAiApiKey,
+        apiKey = currentState.openAiApiKey,
     )
 
     private fun connectToStabilityAi() = setupConnectionInterActor.connectToStabilityAi(
-        currentState.stabilityAiApiKey,
+        apiKey = currentState.stabilityAiApiKey,
     )
 
     private fun connectToHorde(): Single<Result<Unit>> {
@@ -355,8 +390,14 @@ class ServerSetupViewModel(
         when {
             // User cancels download
             localModel.downloadState is DownloadState.Downloading -> {
-                downloadDisposable?.dispose()
-                downloadDisposable = null
+                val index = downloadDisposables.indexOfFirst { it.first == localModel.id }
+                if (index != -1) {
+                    downloadDisposables[index].second.dispose()
+                    downloadDisposables.removeAt(index)
+                }
+                !deleteModelUseCase(localModel.id)
+                    .subscribeOnMainThread(schedulersProvider)
+                    .subscribeBy(::errorLog)
                 updateState {
                     it.copy(
                         localModels = currentState.localModels.withNewState(
@@ -380,14 +421,13 @@ class ServerSetupViewModel(
                         ),
                     )
                 }
-                downloadDisposable?.dispose()
-                downloadDisposable = null
-                downloadDisposable = downloadModelUseCase(localModel.id)
+                !downloadModelUseCase(localModel.id)
                     .distinctUntilChanged()
                     .doOnSubscribe { wakeLockInterActor.acquireWakelockUseCase() }
                     .doFinally { wakeLockInterActor.releaseWakeLockUseCase() }
                     .subscribeOnMainThread(schedulersProvider).subscribeBy(
                         onError = { t ->
+                            errorLog(t)
                             val message = t.localizedMessage ?: "Error"
                             updateState {
                                 it.copy(
@@ -420,7 +460,8 @@ class ServerSetupViewModel(
                                 }
                             }
                         },
-                    ).addToDisposable()
+                    )
+                    .also { downloadDisposables.add(localModel.id to it) }
             }
         }
     }

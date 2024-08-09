@@ -6,15 +6,20 @@ import android.graphics.Bitmap
 import android.net.Uri
 import com.shifthackz.aisdv1.core.imageprocessing.Base64ToBitmapConverter
 import com.shifthackz.aisdv1.domain.entity.MediaStoreInfo
+import com.shifthackz.aisdv1.domain.usecase.gallery.DeleteAllGalleryUseCase
+import com.shifthackz.aisdv1.domain.usecase.gallery.DeleteGalleryItemsUseCase
+import com.shifthackz.aisdv1.domain.feature.work.BackgroundWorkObserver
 import com.shifthackz.aisdv1.domain.usecase.gallery.GetMediaStoreInfoUseCase
 import com.shifthackz.aisdv1.domain.usecase.generation.GetGenerationResultPagedUseCase
 import com.shifthackz.aisdv1.presentation.core.CoreViewModelTest
 import com.shifthackz.aisdv1.presentation.model.Modal
+import com.shifthackz.aisdv1.presentation.navigation.router.drawer.DrawerRouter
 import com.shifthackz.aisdv1.presentation.navigation.router.main.MainRouter
 import com.shifthackz.aisdv1.presentation.stub.stubSchedulersProvider
 import io.mockk.every
 import io.mockk.mockk
 import io.mockk.verify
+import io.reactivex.rxjava3.core.Flowable
 import io.reactivex.rxjava3.core.Single
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -38,19 +43,31 @@ class GalleryViewModelTest : CoreViewModelTest<GalleryViewModel>() {
     private val stubBase64ToBitmapConverter = mockk<Base64ToBitmapConverter>()
     private val stubGalleryExporter = mockk<GalleryExporter>()
     private val stubMainRouter = mockk<MainRouter>()
+    private val stubDrawerRouter = mockk<DrawerRouter>()
+    private val stubDeleteAllGalleryUseCase = mockk<DeleteAllGalleryUseCase>()
+    private val stubDeleteGalleryItemsUseCase = mockk<DeleteGalleryItemsUseCase>()
+    private val backgroundWorkObserver = mockk<BackgroundWorkObserver>()
 
     override fun initializeViewModel() = GalleryViewModel(
         getMediaStoreInfoUseCase = stubGetMediaStoreInfoUseCase,
+        backgroundWorkObserver = backgroundWorkObserver,
         getGenerationResultPagedUseCase = stubGetGenerationResultPagedUseCase,
         base64ToBitmapConverter = stubBase64ToBitmapConverter,
         galleryExporter = stubGalleryExporter,
         schedulersProvider = stubSchedulersProvider,
         mainRouter = stubMainRouter,
+        drawerRouter = stubDrawerRouter,
+        deleteAllGalleryUseCase = stubDeleteAllGalleryUseCase,
+        deleteGalleryItemsUseCase = stubDeleteGalleryItemsUseCase,
     )
 
     @Before
     override fun initialize() {
         super.initialize()
+
+        every {
+            backgroundWorkObserver.observeResult()
+        } returns Flowable.empty()
 
         every {
             stubGetMediaStoreInfoUseCase()
@@ -78,9 +95,9 @@ class GalleryViewModelTest : CoreViewModelTest<GalleryViewModel>() {
 
     @Test
     fun `given received Export Request intent, expected screenModal field in UI state is ConfirmExport`() {
-        viewModel.processIntent(GalleryIntent.Export.Request)
+        viewModel.processIntent(GalleryIntent.Export.All.Request)
         runTest {
-            val expected = Modal.ConfirmExport
+            val expected = Modal.ConfirmExport(true)
             val actual = viewModel.state.value.screenModal
             Assert.assertEquals(expected, actual)
         }
@@ -94,7 +111,7 @@ class GalleryViewModelTest : CoreViewModelTest<GalleryViewModel>() {
 
         Dispatchers.setMain(UnconfinedTestDispatcher())
 
-        viewModel.processIntent(GalleryIntent.Export.Confirm)
+        viewModel.processIntent(GalleryIntent.Export.All.Confirm)
 
         runTest {
             val expectedUiState = Modal.None

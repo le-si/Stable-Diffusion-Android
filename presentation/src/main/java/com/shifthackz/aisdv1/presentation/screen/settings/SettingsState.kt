@@ -16,6 +16,7 @@ data class SettingsState(
     val sdModelSelected: String = "",
     val stabilityAiCredits: Float = 0f,
     val localUseNNAPI: Boolean = false,
+    val backgroundGeneration: Boolean = false,
     val monitorConnectivity: Boolean = false,
     val autoSaveAiResults: Boolean = false,
     val saveToMediaStore: Boolean = false,
@@ -39,7 +40,7 @@ data class SettingsState(
         get() = serverSource == ServerSource.AUTOMATIC1111
 
     val showMonitorConnectionOption: Boolean
-        get() = serverSource == ServerSource.AUTOMATIC1111
+        get() = serverSource == ServerSource.AUTOMATIC1111 || serverSource == ServerSource.SWARM_UI
 
     val showFormAdvancedOption: Boolean
         get() = serverSource != ServerSource.OPEN_AI

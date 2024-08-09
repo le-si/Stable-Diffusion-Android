@@ -47,7 +47,9 @@ class GalleryDetailViewModel(
                 emitEffect(GalleryDetailEffect.ShareClipBoard(intent.content.toString()))
             }
 
-            GalleryDetailIntent.Delete.Request -> setActiveModal(Modal.DeleteImageConfirm)
+            GalleryDetailIntent.Delete.Request -> setActiveModal(
+                Modal.DeleteImageConfirm(false, isMultiple = false)
+            )
 
             GalleryDetailIntent.Delete.Confirm -> {
                 setActiveModal(Modal.None)
@@ -121,13 +123,20 @@ class GalleryDetailViewModel(
             }
         }
 
-    private fun sendPromptToGenerationScreen(screenType: AiGenerationResult.Type) =
+    private fun sendPromptToGenerationScreen(screenType: AiGenerationResult.Type) {
+        val state = (currentState as? GalleryDetailState.Content) ?: return
         !getGenerationResult(itemId)
             .subscribeOnMainThread(schedulersProvider)
             .doFinally { mainRouter.navigateBack() }
             .subscribeBy(::errorLog) { ai ->
-                generationFormUpdateEvent.update(ai, screenType)
+                generationFormUpdateEvent.update(
+                    ai,
+                    screenType,
+                    state.selectedTab == GalleryDetailState.Tab.ORIGINAL,
+                )
             }
+
+    }
 
     private fun getGenerationResult(id: Long): Single<AiGenerationResult> {
         if (id <= 0) return getLastResultFromCacheUseCase()

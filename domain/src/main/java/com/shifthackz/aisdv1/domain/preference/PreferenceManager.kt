@@ -5,7 +5,9 @@ import com.shifthackz.aisdv1.domain.entity.Settings
 import io.reactivex.rxjava3.core.Flowable
 
 interface PreferenceManager {
-    var serverUrl: String
+    var automatic1111ServerUrl: String
+    var swarmUiServerUrl: String
+    var swarmUiModel: String
     var demoMode: Boolean
     var monitorConnectivity: Boolean
     var autoSaveAiResults: Boolean
@@ -28,6 +30,7 @@ interface PreferenceManager {
     var designDarkTheme: Boolean
     var designColorToken: String
     var designDarkThemeToken: String
+    var backgroundGeneration: Boolean
 
     fun observe(): Flowable<Settings>
 }
